@@ -1,4 +1,4 @@
-<img src="https://github.com/fongchingam/PyCoFie/blob/main/PyCoFie_logo.png" width="600" />
+<img src="https://raw.githubusercontent.com/fongchingam/PyCoFie/main/PyCoFie_logo.png" width="600" />
 
 # PyCoFie
   * **Py**thon-based **Co**rona **Fie**ld modeling tool.
@@ -7,6 +7,7 @@
   * Incorporating sunpy, with field line tracing and visualization funcationalities.
   * Multi-threading capable. Reasonably fast.
   
+
 # Required pacakges:
   * Necessary: numpy, scipy, sunpy, streamtracer (from sunpy), astropy, matplotlib.pyplot
   * Optional: pfsspy (for comparison) 
@@ -17,6 +18,9 @@
     * PFSS: Hoeksema, 1984; Wang and Sheeley Jr., 1992
     * CSSS: Zhao and Hoeksema, 1994; Zhao and Hoeksema, 1995  
     * Notes on PFSS-like models: Xudong Sun, http://wso.stanford.edu/words/pfss.pdf
+    
+# Example usage:
+  * [View notebook on GitHub](https://github.com/fongchingam/PyCoFie/blob/main/example_use.ipynb)
   
 # Acknowledgement  
   * We thank Prof. Xudong Sun, Dr. Guanglu Shi for useful discussions, Prof. J. Todd Hoeksema for permission to reproduce the code. 
