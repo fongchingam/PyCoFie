@@ -1,9 +1,9 @@
 <img src="https://raw.githubusercontent.com/fongchingam/PyCoFie/main/PyCoFie_logo.png" width="600" />
 
 # PyCoFie
-  * [View on GitHub](https://github.com/fongchingam/PyCoFie)
+  * [View on GitHub](https://github.com/fongchingam/PyCoFie){:target="_blank"}
   * **Py**thon-based **Co**rona **Fie**ld modeling tool.
-  * Authors: Chingam Fong[(home page)](https://fongchingam.github.io), Kenny C. Y. Ng (the Chinese University of Hong Kong)
+  * Authors: Chingam Fong[(home page)](https://fongchingam.github.io){:target="_blank"}, Kenny C. Y. Ng (the Chinese University of Hong Kong)
   * Can be used to analytically calculate Current Sheet Source Surface (CSSS) model and Potential Field Source Surface (PFSS) model on a preset grid, or at any arbitrary point.
   * Incorporating sunpy, with field line tracing and visualization funcationalities.
   * Multi-threading capable. Reasonably fast.
@@ -21,7 +21,7 @@
     * Notes on PFSS-like models: Xudong Sun, http://wso.stanford.edu/words/pfss.pdf
     
 # Example usage:
-  * [View notebook on GitHub](https://github.com/fongchingam/PyCoFie/blob/main/example_use.ipynb)
+  * [View notebook on GitHub](https://github.com/fongchingam/PyCoFie/blob/main/example_use.ipynb){:target="_blank"}
   
 # Acknowledgement  
   * We thank Prof. Xudong Sun, Dr. Guanglu Shi for useful discussions, Prof. J. Todd Hoeksema for permission to reproduce the code. 
