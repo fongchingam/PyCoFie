@@ -1,8 +1,3 @@
----
-layout: default
-title: PyCoFie
----
-
 <img src="https://raw.githubusercontent.com/fongchingam/PyCoFie/main/PyCoFie_logo.png" width="600" />
 
 # PyCoFie
