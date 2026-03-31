@@ -3,7 +3,7 @@
 # PyCoFie
   * [View on GitHub](https://github.com/fongchingam/PyCoFie)
   * **Py**thon-based **Co**rona **Fie**ld modeling tool.
-  * Authors: Chingam Fong, Kenny C. Y. Ng (the Chinese University of Hong Kong)
+  * **Authors**: Chingam Fong [(home page)](https://fongchingam.github.io), Kenny C. Y. Ng (the Chinese University of Hong Kong)
   * Can be used to analytically calculate Current Sheet Source Surface (CSSS) model and Potential Field Source Surface (PFSS) model on a preset grid, or at any arbitrary point.
   * Incorporating sunpy, with field line tracing and visualization funcationalities.
   * Multi-threading capable. Reasonably fast.
