@@ -7,9 +7,11 @@
   * Can be used to analytically calculate Current Sheet Source Surface (CSSS) model and Potential Field Source Surface (PFSS) model on a preset grid, or at any arbitrary point.
   * Incorporating sunpy, with field line tracing and visualization funcationalities.
   * Multi-threading capable. Reasonably fast.
-  
 
-# Required pacakges:
+# Example usage
+  * [View notebook on GitHub](https://github.com/fongchingam/PyCoFie/blob/main/example_use.ipynb){:target="_blank"}
+
+# Required pacakges
   * Necessary: numpy, scipy, sunpy, streamtracer (from sunpy), astropy, matplotlib.pyplot
   * Optional: pfsspy (for comparison) 
   
@@ -19,9 +21,6 @@
     * PFSS: Hoeksema, 1984; Wang and Sheeley Jr., 1992
     * CSSS: Zhao and Hoeksema, 1994; Zhao and Hoeksema, 1995  
     * Notes on PFSS-like models: Xudong Sun, http://wso.stanford.edu/words/pfss.pdf
-    
-# Example usage:
-  * [View notebook on GitHub](https://github.com/fongchingam/PyCoFie/blob/main/example_use.ipynb){:target="_blank"}
   
 # Acknowledgement  
   * We thank Prof. Xudong Sun, Dr. Guanglu Shi for useful discussions, Prof. J. Todd Hoeksema for permission to reproduce the code. 
