@@ -1,6 +1,6 @@
 theme: minima
 title: PyCoFie
-description: Python project site for PyCoFie
+description: Python project for calculating the coronal magnetic field
 
 repository: fongchingam/PyCoFie
 github_username: fongchingam
