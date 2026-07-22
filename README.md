@@ -1,6 +1,5 @@
 <img src="https://raw.githubusercontent.com/fongchingam/PyCoFie/main/PyCoFie_logo.png" width="600" />
 
-# PyCoFie
   * [View homepage](https://fongchingam.github.io/PyCoFie/){:target="_blank"} / [View github page](https://github.com/fongchingam/PyCoFie){:target="_blank"}
   * **Py**thon-based **Co**rona **Fie**ld modeling tool.
   * Authors: Chingam Fong, Kenny C. Y. Ng (the Chinese University of Hong Kong)
