@@ -80,9 +80,38 @@ def get_gh(Bra, N=85):
     #gh_result = np.where(np.isnan(gh_result), 0, gh_result)
     del results, lm_pairs, costheta, phi, costheta_l, sintheta_l, phi_l, all_Plm, all_dPlm
     return gh_result
-    
+
+def accumulate_in_place(res, Rl_results, Br, Bt, Bp):
+    l, hm_r, hm_t, hm_p = res
+    Rl_r, Rl_tp = Rl_results[int(l)]
+    Rl_r = np.array(Rl_r, dtype=np.float32)
+    Rl_tp = np.array(Rl_tp, dtype=np.float32)
+
+    Br += hm_r * Rl_r[:, None, None]
+    Bt += hm_t * Rl_tp[:, None, None]
+    Bp += hm_p * Rl_tp[:, None, None]
+
+def process_chunk(args):
+    chunk, Rl_results, Nr, Np, Nt = args
+    Br = np.zeros([Nr, Np, Nt], dtype=np.float32)
+    Bt = np.zeros_like(Br)
+    Bp = np.zeros_like(Br)
+    for res in chunk:
+        if res is None:
+            continue
+        
+        l, hm_r, hm_t, hm_p = res
+        Rl_r, Rl_tp = Rl_results[int(l)]
+        Rl_r = np.array(Rl_r, dtype=np.float32)
+        Rl_tp = np.array(Rl_tp, dtype=np.float32)
+        Br += hm_r * Rl_r[:, None, None]
+        Bt += hm_t * Rl_tp[:, None, None]
+        Bp += hm_p * Rl_tp[:, None, None]
+    return Br, Bt, Bp
+
 def rec_Brtp_PFSS(gh_array, r, N = 85, Rs = 2.5, 
-             Np = 360, Nt = 180, eqtheta = False, gridcenter = True):
+             Np = 360, Nt = 180, eqtheta = False, gridcenter = True,
+             nproc = 14):
     
     Nr = len(r)
 
@@ -131,24 +160,19 @@ def rec_Brtp_PFSS(gh_array, r, N = 85, Rs = 2.5,
     with ThreadPoolExecutor() as executor:
         Rl_results = list(executor.map(lambda l: compute_Rl(r, l, Rs), range(order+1)))
     
-    Br = np.zeros([Nr, Np, Nt], dtype=np.float32)
-    Bt = np.zeros([Nr, Np, Nt], dtype=np.float32)
-    Bp = np.zeros([Nr, Np, Nt], dtype=np.float32)
+    # Divide results into chunks
+    chunksize = max(1, len(results)//nproc)
+    chunks = [results[i:i+chunksize] for i in range(0, len(results), chunksize)]
 
-    for res in results:
-        if res is None:
-            continue
-        
-        l, hm_r, hm_t, hm_p = res
+    # Thread-based parallel accumulation
+    with ThreadPoolExecutor(max_workers=nproc) as executor:
+        args = [(c, Rl_results, Nr, Np, Nt) for c in chunks]
+        partials = list(executor.map(process_chunk, args))
 
-        Rl_r, Rl_tp = Rl_results[int(l)]
-        Rl_r = np.array(Rl_r, dtype=np.float32)
-        Rl_tp = np.array(Rl_tp, dtype=np.float32)
-
-        Br += hm_r*Rl_r[:, np.newaxis, np.newaxis]
-        Bt += hm_t*Rl_tp[:, np.newaxis, np.newaxis]
-        Bp += hm_p*Rl_tp[:, np.newaxis, np.newaxis]
-    del hm_r, hm_t, hm_p, Rl_r, Rl_tp, all_Plm, all_dPlm, results, Rl_results
+    Br = sum(p[0] for p in partials)
+    Bt = sum(p[1] for p in partials)
+    Bp = sum(p[2] for p in partials)
+    del all_Plm, all_dPlm, results, Rl_results
 
     return Br, Bt, Bp
 
@@ -183,9 +207,10 @@ def HCS_dR_H(r, l, Rc = 1.7, Rs = 2.5, a = 1):
 ############ END CAUTION ########################    
 
 
-def rec_Brtp_CSSS(gh_array, r_all, N=85, Rs=2.5, 
+def rec_Brtp_CSSS_low(gh_array, r_all, N=85, Rs=2.5, 
                   Np=360, Nt=180, eqtheta=False,
-                  Rc=1.7, a=1, gridcenter=True):
+                  Rc=1.7, a=1, gridcenter=True,
+                  nproc = 14):
 
     r = np.append(r_all[np.where(r_all < Rc)], Rc)
     Nr = len(r)
@@ -227,6 +252,7 @@ def rec_Brtp_CSSS(gh_array, r_all, N=85, Rs=2.5,
         hm_r = np.array(norm * lpmv * (gc + hs), dtype=np.float32)
         hm_t = np.array(norm * dpmv * (gc + hs) * sintheta_l, dtype=np.float32)
         hm_p = np.array(m * norm * lpmv * div_sintheta_l * (gs - hc), dtype=np.float32)
+
         return l, hm_r, hm_t, hm_p
 
     # Parallel execution
@@ -236,24 +262,20 @@ def rec_Brtp_CSSS(gh_array, r_all, N=85, Rs=2.5,
     with ThreadPoolExecutor() as executor:
         Rl_results = list(executor.map(lambda l: compute_Rl(r, l, a), range(order+1)))
 
-    Br = np.zeros([Nr, Np, Nt], dtype=np.float32)
-    Bt = np.zeros([Nr, Np, Nt], dtype=np.float32)
-    Bp = np.zeros([Nr, Np, Nt], dtype=np.float32)
-    
-    for res in results:
-        if res is None:
-            continue
-        
-        l, hm_r, hm_t, hm_p = res
+    # Divide results into chunks
+    chunksize = max(1, len(results)//nproc)
+    chunks = [results[i:i+chunksize] for i in range(0, len(results), chunksize)]
 
-        Rl_r, Rl_tp = Rl_results[int(l)]
-        Rl_r = np.array(Rl_r, dtype=np.float32)
-        Rl_tp = np.array(Rl_tp, dtype=np.float32)
+    # Thread-based parallel accumulation
+    with ThreadPoolExecutor(max_workers=nproc) as executor:
+        args = [(c, Rl_results, Nr, Np, Nt) for c in chunks]
+        partials = list(executor.map(process_chunk, args))
 
-        Br += hm_r*Rl_r[:, np.newaxis, np.newaxis]
-        Bt += hm_t*Rl_tp[:, np.newaxis, np.newaxis]
-        Bp += hm_p*Rl_tp[:, np.newaxis, np.newaxis]
-    del hm_r, hm_t, hm_p, Rl_r, Rl_tp, all_Plm, all_dPlm, results, Rl_results
+    Br = sum(p[0] for p in partials)
+    Bt = sum(p[1] for p in partials)
+    Bp = sum(p[2] for p in partials)
+
+    del all_Plm, all_dPlm, results, Rl_results
 
     return Br, Bt, Bp
 
@@ -291,7 +313,6 @@ def get_albe_ind(order, Nt, Np):
     ct_p_i_i[:, 0] = f_ci
     ct_p_i_i[:, 1] = f_pi
     ct_p_i_i[:, 2] = f_i
-
 
     for row in abind:
         row[:, 2:] = ct_p_i_i
@@ -388,43 +409,46 @@ def get_albe_AB(order, Nt, Np, Rs = 2.5, Rc = 1.7, a = 1):
     ABinv = np.linalg.inv(ABmat)
     return ABinv, abmat
 
-def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, 
-                order = 9):
-    
-    Nt, Np = np.shape(Br_cusp)[0], np.shape(Br_cusp)[1]
+def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order=9):
+    Nt, Np = Br_cusp.shape
     ABinv, abmat = get_albe_AB(order, Nt, Np)
-    #print(Nt, Np)
+
     # invert the field
-    # follow Zhao (1995) paper logic
     rev_Br = np.where(Br_cusp < 0, -Br_cusp, Br_cusp)
     rev_Bt = np.where(Br_cusp < 0, -Bt_cusp, Bt_cusp)
     rev_Bp = np.where(Br_cusp < 0, -Bp_cusp, Bp_cusp)
-    Ba = np.append(np.append(rev_Br, rev_Bt, axis = 1), rev_Bp, axis = 1).flatten()
+    Ba = np.concatenate([rev_Br, rev_Bt, rev_Bp], axis=1).ravel()
 
-    gh_c = np.matmul(ABinv, np.dot(abmat, Ba.T))
-    #print(len(gh_c))
-    
-    for l in np.arange(order+1):
-        g_ini = np.sum(np.arange(l+1))
-        h_ini = np.sum(np.arange(l)) + int((order+1)*(order+2)/2)
-        for m in np.arange(l+1): 
-            g_ind = g_ini + m
-            glm = gh_c[g_ind]
-            if m != 0:
-                h_ind = h_ini + m - 1
-                hlm = gh_c[h_ind]
-            else:
-                hlm = 0
-            if l == 0:
-                gaha_result = np.array([np.array([int(l), int(m), glm, hlm], dtype = object)])
-            else:
-                gaha_result = np.append(gaha_result, [np.array([int(l), int(m), glm, hlm], dtype = object)], axis = 0)
-    #print(g_ind, h_ind)
+    gh_c = ABinv @ (abmat @ Ba.T)
+
+    # total number of (l,m) pairs
+    nrows = (order + 1) * (order + 2) // 2
+
+    # Generate all (l,m) pairs correctly
+    L = np.repeat(np.arange(order + 1), np.arange(1, order + 2))
+    M = np.concatenate([np.arange(l + 1) for l in range(order + 1)])
+
+    # g_ini and h_ini closed-form
+    g_ini = L * (L + 1) // 2
+    h_ini = L * (L - 1) // 2 + (order + 1) * (order + 2) // 2
+
+    g_ind = g_ini + M
+    glm = gh_c[g_ind]
+
+    # hlm only for m != 0
+    hlm = np.zeros_like(glm)
+    mask = M != 0
+    hlm[mask] = gh_c[h_ini[mask] + M[mask] - 1]
+
+    # Stack into final array
+    gaha_result = np.column_stack([L, M, glm, hlm]).astype(object)
+
     return gaha_result
 
-def rec_Brtp_CSSS_up(gh_array, r_all, N = 85, Rs = 2.5, 
+def rec_Brtp_CSSS_high(gh_array, r_all, N = 85, Rs = 2.5, 
                             Np = 360, Nt = 180, eqtheta = False,
-                            Rc = 1.7, a = 1, gridcenter = True):
+                            Rc = 1.7, a = 1, gridcenter = True,
+                            nproc = 14):
     r = r_all[np.where(r_all > Rc)]
     Nr = len(r)
     
@@ -474,25 +498,19 @@ def rec_Brtp_CSSS_up(gh_array, r_all, N = 85, Rs = 2.5,
     with ThreadPoolExecutor() as executor:
         Rh_results = list(executor.map(lambda l: compute_Rh(r, l, a, Rc, Rs), range(order+1)))
 
+    # Divide results into chunks
+    chunksize = max(1, len(results)//nproc)
+    chunks = [results[i:i+chunksize] for i in range(0, len(results), chunksize)]
 
-    Br_h, Bt_h, Bp_h = np.zeros([Nr, Np, Nt], dtype=np.float32), np.zeros([Nr, Np, Nt], dtype=np.float32), np.zeros([Nr, Np, Nt], dtype=np.float32)
-    
+    # Thread-based parallel accumulation
+    with ThreadPoolExecutor(max_workers=nproc) as executor:
+        args = [(c, Rh_results, Nr, Np, Nt) for c in chunks]
+        partials = list(executor.map(process_chunk, args))
 
-    for res in results:
-        if res is None:
-            continue
-        
-        l, hm_r, hm_t, hm_p = res
-        #print(l, hm_r)
-
-        Rh_r, Rh_tp = Rh_results[int(l)]
-        Rh_r = np.array(Rh_r, dtype=np.float32)
-        Rh_tp = np.array(Rh_tp, dtype=np.float32)
-
-        Br_h += hm_r*Rh_r[:, np.newaxis, np.newaxis]
-        Bt_h += hm_t*Rh_tp[:, np.newaxis, np.newaxis]
-        Bp_h += hm_p*Rh_tp[:, np.newaxis, np.newaxis]
-    del hm_r, hm_t, hm_p, Rh_r, Rh_tp, all_Plm, all_dPlm, results, Rh_results
+    Br_h = sum(p[0] for p in partials)
+    Bt_h = sum(p[1] for p in partials)
+    Bp_h = sum(p[2] for p in partials)
+    del all_Plm, all_dPlm, results, Rh_results
 
     return Br_h, Bt_h, Bp_h
 
@@ -500,23 +518,27 @@ def rec_Brtp_CSSS_full(gh_array, r_all,
                        N = 85, Ncusp = 9,
                        Np = 360, Nt = 180, 
                        Rs = 2.5, Rc = 1.7, a = 1, 
-                       eqtheta = False, gridcenter = True):
+                       eqtheta = False, gridcenter = True,
+                       nproc = 14, step_size = 0.1):
+
     # Calculate the field in the lower region, including the cusp surface for 2nd boundary condition
-    Br_l, Bt_l, Bp_l = rec_Brtp_CSSS(gh_array, r_all, 
+    Br_l, Bt_l, Bp_l = rec_Brtp_CSSS_low(gh_array, r_all, 
                                      N=N, 
                                      Rs=Rs, Rc=Rc, a=a, 
-                                     Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter)
+                                     Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter,
+                                     nproc=nproc)
     Br_cusp, Bt_cusp, Bp_cusp = (Br_l[-1]).T, (Bt_l[-1]).T, (Bp_l[-1]).T
-    
+
     # Spherical harmonics for the cusp surface
     gaha_result = get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order = Ncusp)
 
     # Calculate the field in the upper region, using the cusp surface as the boundary condition
-    Br_h, Bt_h, Bp_h = rec_Brtp_CSSS_up(gaha_result, r_all, 
+    Br_h, Bt_h, Bp_h = rec_Brtp_CSSS_high(gaha_result, r_all, 
                                         N=Ncusp, 
                                         Rs=Rs, Rc=Rc, a=a, 
-                                        Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter)
-    
+                                        Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter,
+                                        nproc=nproc)
+
     # Temporary upper field grid including cusp surface for field line tracing
     rev_Br = np.where(Br_cusp < 0, -Br_cusp, Br_cusp).T
     rev_Bt = np.where(Br_cusp < 0, -Bt_cusp, Bt_cusp).T
@@ -529,49 +551,47 @@ def rec_Brtp_CSSS_full(gh_array, r_all,
     r_up = np.append(np.array([Rc]), r_all[np.where(r_all > Rc)])
 
     # Trace all field lines in the upper region, to find their polarity
-    step_size = 0.05
-
     nsteps = int((Rs - Rc)/step_size)
     tracer = StreamTracer(nsteps, step_size)
         
     costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta = False, gridcenter = False)
-
     t_coord = np.arccos(costheta_l)
     p_coord = phi_l
 
     vector_grid_up = build_sph_vector_grid(Br_uptemp, Bt_uptemp, Bp_uptemp, 
                                         r_up, t_coord, p_coord,
                                         fliptheta = True)
-    
     Br_const, Bt_const, Bp_const = Br_uptemp.copy(), Bt_uptemp.copy(), Bp_uptemp.copy()
 
-    for rind in np.arange(len(r_up)):
-        r_traced = r_up[rind:rind+1]
-        all_seeds_r, all_seeds_phi, all_seeds_theta = np.meshgrid(r_traced, p_coord, t_coord, indexing = 'ij')
+    # Build seeds for all points in vector grid
+    all_seeds_r, all_seeds_phi, all_seeds_theta = np.meshgrid(r_up, p_coord, t_coord, indexing='ij')
+    all_seeds = np.array([all_seeds_r.flatten(),
+                        all_seeds_phi.flatten(),
+                        all_seeds_theta.flatten()]).T
 
-        all_seeds = np.array([all_seeds_r.flatten(), all_seeds_phi.flatten(), all_seeds_theta.flatten()]).T
-        tracer.trace(all_seeds, vector_grid_up)
+    # Trace all seeds downward to determine the polarity of the field lines
+    tracer.trace(all_seeds, vector_grid_up, -1)
 
-        line_inis = []
-        for i in np.arange(len(all_seeds)):
-            line = tracer.xs[i]
-            line_inis.append(line[0])
-            
-        line_inis = np.array(line_inis)
+    # Extract lowest positions
+    line_inis = np.array([tracer.xs[i][0] for i in range(len(all_seeds))])
+    line_inis = line_inis.reshape(len(r_up), Np, Nt, 3)
+    
+    icoords = np.stack([line_inis[..., 2], line_inis[..., 1]], axis=-1)  # shape (Nr, Np, Nt, 2)
+    icoords_flat = icoords.reshape(-1, 2)
 
-        icoords = np.array([line_inis[:, 2], line_inis[:, 1]])
-        Binterp = sp.interpolate.interpn((t_coord, p_coord), Br_cusp, icoords.T)
-        Binterp = Binterp.reshape([Np, Nt])
+    # Find the values of line origins on the cusp surface using interpolation
+    Binterp = sp.interpolate.interpn((t_coord, p_coord), Br_cusp, icoords_flat)
+    Binterp = Binterp.reshape(len(r_up), Np, Nt)
 
-        Br_const[rind] *= np.sign(Binterp)
-        Bt_const[rind] *= np.sign(Binterp)
-        Bp_const[rind] *= np.sign(Binterp)
+    # Compute signs and apply in one broadcast
+    signs = np.sign(Binterp)
+    Br_const *= signs
+    Bt_const *= signs
+    Bp_const *= signs
 
     # Combine the lower and upper region fields, ensuring the cusp surface is not duplicated
     Br_full, Bt_full, Bp_full = np.append(Br_l[:-1], Br_const[1:], axis = 0), np.append(Bt_l[:-1], Bt_const[1:], axis = 0), np.append(Bp_l[:-1], Bp_const[1:], axis = 0)
     return Br_full, Bt_full, Bp_full
-    
-
     
 def build_sph_vector_grid(Br, Bt, Bp, 
                       r_coord, t_coord, p_coord,
