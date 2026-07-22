@@ -1,4 +1,6 @@
 theme: minima
 title: PyCoFie
-description: My Python project site
+description: Python project site for PyCoFie
 
+repository: fongchingam/PyCoFie
+github_username: fongchingam
