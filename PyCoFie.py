@@ -1,9 +1,9 @@
 from operator import mul
 import functools
 import numpy as np
-import scipy as sp
 from streamtracer import StreamTracer, VectorGrid
-from scipy.special import gammaln
+from scipy.special import gammaln, assoc_legendre_p_all
+from scipy.interpolate import interpn
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -32,11 +32,9 @@ def get_ct_p_grids(Nt, Np, eqtheta = False, gridcenter = False):
     return costheta, phi, costheta_l, sintheta_l, phi_l
 
 def get_allPdP(mbig, lbig, costheta):
-    Nt = len(costheta)
-
     # assoc_legendre_p_all computes all orders up to lbig
     # returns (values, derivatives) 
-    P_all, dP_all = sp.special.assoc_legendre_p_all(mbig, lbig, costheta, diff_n=1)
+    P_all, dP_all = assoc_legendre_p_all(mbig, lbig, costheta, diff_n=1)
 
     # Shapes: (Nt, lbig+1, lbig+1)
     # P_all[i, l, m] = P_l^m(costheta[i])
@@ -207,18 +205,14 @@ def HCS_dR_H(r, l, Rc = 1.7, Rs = 2.5, a = 1):
 ############ END CAUTION ########################    
 
 
-def rec_Brtp_CSSS_low(gh_array, r_all, N=85, Rs=2.5, 
-                  Np=360, Nt=180, eqtheta=False,
-                  Rc=1.7, a=1, gridcenter=True,
-                  nproc = 14):
+def rec_Brtp_CSSS_low(gh_array, r_all, 
+                      phi, costheta_l, sintheta_l, div_sintheta_l,
+                      Rc=1.7, a=1, N=85, 
+                      nproc = 14):
 
     r = np.append(r_all[np.where(r_all < Rc)], Rc)
     Nr = len(r)
-
-    costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta=eqtheta, gridcenter=gridcenter)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        div_sintheta_l = 1/sintheta_l
-        div_sintheta_l = np.where(abs(sintheta_l) < 1e-15, 0, div_sintheta_l)
+    Nt, Np = len(costheta_l), len(phi)
 
     if N == 'all' or N > len(gh_array):
         print("Warning: N is set to 'all' or greater than the number of available coefficients. Using all coefficients.")
@@ -320,9 +314,9 @@ def get_albe_ind(order, Nt, Np):
 
 ### Alpha function
 
-
-def alpha_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
-                    Rs=2.5, Rc=1.7, a=1):
+def alpha_byind(inds, all_Plm, all_dPlm, 
+                phi_l, sintheta_l, div_sintheta_l,
+                Rs=2.5, Rc=1.7, a=1):
     l     = inds[:, :, 0].astype(int)
     m     = inds[:, :, 1].astype(int)
     ct_i  = inds[:, :, 2].astype(int)
@@ -331,6 +325,7 @@ def alpha_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
 
     p  = phi_l[phi_i]
     st = sintheta_l[ct_i]
+    dst = div_sintheta_l[ct_i]
 
     d0   = (m == 0).astype(int)
     ratio = np.exp(gammaln(l-m+1) - gammaln(l+m+1))
@@ -348,16 +343,16 @@ def alpha_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
     mask2 = (rtp == 2)
     mask3 = (rtp == 3)
 
-    
     # Each of these is 1D, so just use one mask
     result[mask1] = cosmp[mask1] * norm[mask1] * Plm[mask1]
     result[mask2] = -Kl_val[mask2] * cosmp[mask2] * norm[mask2] * dPlm[mask2] * (-st[mask2])
-    result[mask3] = m[mask3] * Kl_val[mask3] * sinmp[mask3] * norm[mask3] * Plm[mask3] / st[mask3]
+    result[mask3] = m[mask3] * Kl_val[mask3] * sinmp[mask3] * norm[mask3] * Plm[mask3] *dst[mask3] #/ st[mask3]
 
     return result
 
-def beta_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
-                   Rs=2.5, Rc=1.7, a=1):
+def beta_byind(inds, all_Plm, all_dPlm, 
+               phi_l, sintheta_l, div_sintheta_l,
+               Rs=2.5, Rc=1.7, a=1):
     l     = inds[:, :, 0].astype(int)
     m     = inds[:, :, 1].astype(int)
     ct_i  = inds[:, :, 2].astype(int)
@@ -366,6 +361,7 @@ def beta_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
 
     p  = phi_l[phi_i]
     st = sintheta_l[ct_i]
+    dst = div_sintheta_l[ct_i]
 
     d0   = (m == 0).astype(int)
     ratio = np.exp(gammaln(l-m+1) - gammaln(l+m+1))
@@ -385,33 +381,39 @@ def beta_byind(inds, all_Plm, all_dPlm, phi_l, costheta_l, sintheta_l,
 
     result[mask1] = sinmp[mask1] * norm[mask1] * Plm[mask1]
     result[mask2] = -Kl_val[mask2] * sinmp[mask2] * norm[mask2] * dPlm[mask2] * (-st[mask2])
-    result[mask3] = -m[mask3] * Kl_val[mask3] * cosmp[mask3] * norm[mask3] * Plm[mask3] / st[mask3]
+    result[mask3] = -m[mask3] * Kl_val[mask3] * cosmp[mask3] * norm[mask3] * Plm[mask3] *dst[mask3] #/ st[mask3]
 
     return result
 
-def get_albe_AB(order, Nt, Np, Rs = 2.5, Rc = 1.7, a = 1):
-    costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, gridcenter = True)
+def get_albe_AB(order, Nt, Np, 
+                costheta_l, sintheta_l, phi_l, div_sintheta_l,
+                Rs = 2.5, Rc = 1.7, a = 1):
+
     all_Plm, all_dPlm = get_allPdP(order, order, costheta_l)
-    #order, Nt, Np = 9, 180, 360
+
     abind = get_albe_ind(order, Nt, Np)
     abmat = np.zeros([int((order+1)**2), Nt*Np*3])
-    lv1, lv2, lv3 = len(abind)//4, len(abind)//2, len(abind)//4*3
 
     div_row = int((order+2)*(order+1)/2)
-    abmat[:div_row] = alpha_byind(abind[:div_row, :], all_Plm, all_dPlm, phi_l, 
-                                  costheta_l, sintheta_l, Rs = Rs, Rc = Rc, a = a)
-    abmat[div_row:] = beta_byind(abind[div_row:, :], all_Plm, all_dPlm, phi_l, 
-                                 costheta_l, sintheta_l, Rs = Rs, Rc = Rc, a = a)
-    
+    abmat[:div_row] = alpha_byind(abind[:div_row, :], all_Plm, all_dPlm, 
+                                  phi_l, sintheta_l, div_sintheta_l,
+                                  Rs = Rs, Rc = Rc, a = a)
+    abmat[div_row:] = beta_byind(abind[div_row:, :], all_Plm, all_dPlm, 
+                                 phi_l, sintheta_l, div_sintheta_l, Rs = Rs, Rc = Rc, a = a)
+
     ABmat = np.matmul(abmat, abmat.T)
     
-    #print(ABmat[0])
     ABinv = np.linalg.inv(ABmat)
     return ABinv, abmat
 
-def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order=9):
+def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, 
+                costheta_l, sintheta_l, phi_l, div_sintheta_l,
+                Rs = 2.5, Rc = 1.7, a = 1,
+                order=9):
     Nt, Np = Br_cusp.shape
-    ABinv, abmat = get_albe_AB(order, Nt, Np)
+    ABinv, abmat = get_albe_AB(order, Nt, Np,
+                               costheta_l, sintheta_l, phi_l, div_sintheta_l,
+                               Rs = Rs, Rc = Rc, a = a)
 
     # invert the field
     rev_Br = np.where(Br_cusp < 0, -Br_cusp, Br_cusp)
@@ -420,9 +422,6 @@ def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order=9):
     Ba = np.concatenate([rev_Br, rev_Bt, rev_Bp], axis=1).ravel()
 
     gh_c = ABinv @ (abmat @ Ba.T)
-
-    # total number of (l,m) pairs
-    nrows = (order + 1) * (order + 2) // 2
 
     # Generate all (l,m) pairs correctly
     L = np.repeat(np.arange(order + 1), np.arange(1, order + 2))
@@ -445,18 +444,14 @@ def get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order=9):
 
     return gaha_result
 
-def rec_Brtp_CSSS_high(gh_array, r_all, N = 85, Rs = 2.5, 
-                            Np = 360, Nt = 180, eqtheta = False,
-                            Rc = 1.7, a = 1, gridcenter = True,
-                            nproc = 14):
+def rec_Brtp_CSSS_high(gh_array, r_all, 
+                       phi, costheta_l, sintheta_l, div_sintheta_l,
+                       N = 85, Rs = 2.5, Rc = 1.7, a = 1, 
+                       nproc = 14):
     r = r_all[np.where(r_all > Rc)]
     Nr = len(r)
-    
-    costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta = eqtheta, gridcenter = gridcenter)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        div_sintheta_l = 1/sintheta_l
-        div_sintheta_l = np.where(abs(sintheta_l) < 1e-15, 0, div_sintheta_l)
-    
+    Nt, Np = len(costheta_l), len(phi)
+
     if N == 'all' or N > len(gh_array):
         print("Warning: N is set to 'all' or greater than the number of available coefficients. Using all coefficients.")
         N_rows = len(gh_array)
@@ -521,22 +516,29 @@ def rec_Brtp_CSSS_full(gh_array, r_all,
                        eqtheta = False, gridcenter = True,
                        nproc = 14, step_size = 0.1):
 
+    costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta=eqtheta, gridcenter=gridcenter)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        div_sintheta_l = 1/sintheta_l
+        div_sintheta_l = np.where(abs(sintheta_l) < 1e-15, 0, div_sintheta_l)
+
     # Calculate the field in the lower region, including the cusp surface for 2nd boundary condition
     Br_l, Bt_l, Bp_l = rec_Brtp_CSSS_low(gh_array, r_all, 
-                                     N=N, 
-                                     Rs=Rs, Rc=Rc, a=a, 
-                                     Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter,
-                                     nproc=nproc)
+                                         phi, costheta_l, sintheta_l, div_sintheta_l,
+                                         N=N, Rc=Rc, a=a, 
+                                         nproc=nproc)
     Br_cusp, Bt_cusp, Bp_cusp = (Br_l[-1]).T, (Bt_l[-1]).T, (Bp_l[-1]).T
 
     # Spherical harmonics for the cusp surface
-    gaha_result = get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, order = Ncusp)
+    gaha_result = get_gh_cusp(Br_cusp, Bt_cusp, Bp_cusp, 
+                              costheta_l, sintheta_l, phi_l, div_sintheta_l,
+                              Rs = Rs, Rc = Rc, a = a,
+                              order = Ncusp)
 
     # Calculate the field in the upper region, using the cusp surface as the boundary condition
     Br_h, Bt_h, Bp_h = rec_Brtp_CSSS_high(gaha_result, r_all, 
+                                          phi, costheta_l, sintheta_l, div_sintheta_l,
                                         N=Ncusp, 
                                         Rs=Rs, Rc=Rc, a=a, 
-                                        Np=Np, Nt=Nt, eqtheta=eqtheta, gridcenter=gridcenter,
                                         nproc=nproc)
 
     # Temporary upper field grid including cusp surface for field line tracing
@@ -554,7 +556,7 @@ def rec_Brtp_CSSS_full(gh_array, r_all,
     nsteps = int((Rs - Rc)/step_size)
     tracer = StreamTracer(nsteps, step_size)
         
-    costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta = False, gridcenter = False)
+    #costheta, phi, costheta_l, sintheta_l, phi_l = get_ct_p_grids(Nt, Np, eqtheta = False, gridcenter = False)
     t_coord = np.arccos(costheta_l)
     p_coord = phi_l
 
@@ -580,7 +582,7 @@ def rec_Brtp_CSSS_full(gh_array, r_all,
     icoords_flat = icoords.reshape(-1, 2)
 
     # Find the values of line origins on the cusp surface using interpolation
-    Binterp = sp.interpolate.interpn((t_coord, p_coord), Br_cusp, icoords_flat)
+    Binterp = interpn((t_coord, p_coord), Br_cusp, icoords_flat)
     Binterp = Binterp.reshape(len(r_up), Np, Nt)
 
     # Compute signs and apply in one broadcast
