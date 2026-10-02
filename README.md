@@ -1,3 +1,10 @@
+---
+title: PyCoFie - Python project for calculating the coronal magnetic field
+canonical_url: https://fongchingam.github.io/PyCoFie/
+header-includes:
+  - <meta name="google-site-verification" content="JHlYIhqvDoTuVO7Z0QBG5AZ48hllCceuQr-w0rBj9qo" />
+---
+
 <img src="https://raw.githubusercontent.com/fongchingam/PyCoFie/main/PyCoFie_logo.png" width="600" />
 
   * [View homepage](https://fongchingam.github.io/PyCoFie/){:target="_blank"} / [View github page](https://github.com/fongchingam/PyCoFie){:target="_blank"}
